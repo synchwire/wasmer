@@ -25,7 +25,13 @@ fn build_v8() {
         ("linux", "x86_64", "gnu") => format!("{V8_RELEASE}/v8-linux-amd64.tar.xz"),
         ("linux", "x86_64", "musl") => format!("{V8_RELEASE}/v8-linux-musl.tar.xz"),
         ("android", "aarch64", _) => format!("{V8_RELEASE}/v8-android.tar.xz"),
-        ("windows", "x86_64", _) => format!("{V8_RELEASE}/v8-windows-amd64.tar.xz"),
+        // Windows is not wired up: the upstream v8-custom-builds Windows
+        // recipe builds the v8_monolith ninja target (wee8 has
+        // dllimport/dllexport issues on Windows), and v8_monolith
+        // doesn't export the wasm_* C-API symbols that wasmer links
+        // against. Re-enable this arm only after wee8 is buildable on
+        // Windows or wasmer switches to linking v8_monolith directly.
+        //("windows", "x86_64", _) => format!("{V8_RELEASE}/v8-windows-amd64.tar.xz"),
         ("ios", "aarch64", _) => {
             // iOS has no JIT entitlement outside BrowserEngineKit, so
             // embedders must initialize V8 with --jitless at runtime
