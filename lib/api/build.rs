@@ -207,17 +207,19 @@ fn build_v8() {
     let v8_include = PathBuf::from(&out_dir).join("include");
     let shim_src = v8_header_path.join("v8_flags_shim.cc");
     println!("cargo:rerun-if-changed={}", shim_src.display());
-    let mut shim = cc::Build::new();
-    shim.cpp(true)
+    // V8 13.x headers require C++20 (v8config.h enforces this with a
+    // #error). The cc crate drives target/sdk selection from
+    // CARGO_CFG_TARGET_* already, so no manual -target flag is
+    // needed — passing one just fought the runner's own
+    // -miphoneos-version-min.
+    cc::Build::new()
+        .cpp(true)
         .file(&shim_src)
         .include(&v8_include)
-        .std("c++17")
+        .std("c++20")
         .flag_if_supported("-fno-exceptions")
-        .flag_if_supported("-fno-rtti");
-    if target_os == "ios" {
-        shim.flag("-target").flag("arm64-apple-ios16.0");
-    }
-    shim.compile("wasmer_v8_flags_shim");
+        .flag_if_supported("-fno-rtti")
+        .compile("wasmer_v8_flags_shim");
 }
 
 #[allow(unused)]
