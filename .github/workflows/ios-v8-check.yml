@@ -27,6 +27,16 @@ jobs:
       - name: Pick a stable Xcode
         run: sudo xcode-select -s /Applications/Xcode_16.2.app
 
+      # wasmer's build.rs shells out to llvm-objcopy / objcopy / gobjcopy
+      # during the wee8 symbol-rename step. macOS runners have none of
+      # those on PATH by default (Xcode ships llvm-objcopy only under
+      # xcrun, not at a stable PATH location), so install the brew
+      # LLVM toolchain and prepend its bin dir.
+      - name: Install LLVM (for llvm-objcopy)
+        run: |
+          brew install llvm
+          echo "$(brew --prefix llvm)/bin" >> "$GITHUB_PATH"
+
       # The repo pins a toolchain via rust-toolchain.toml (channel = "1.91").
       # Using dtolnay/rust-toolchain@stable would install stable but cargo
       # would still invoke the pinned 1.91, which wouldn't have the iOS
