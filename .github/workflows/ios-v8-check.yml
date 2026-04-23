@@ -1,0 +1,69 @@
+name: iOS V8 cross-compile
+
+# Minimal verification that wasmer's v8 backend cross-compiles to
+# aarch64-apple-ios. The upstream build.yml matrix has enable_v8:
+# false on every entry (V8 marked broken per wasmerio/wasmer#6124),
+# so none of the existing jobs exercise the v8 code path. This job
+# plugs that gap for the iOS target specifically.
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  ios-v8:
+    name: cargo build --target aarch64-apple-ios --features v8
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: true
+
+      - name: Pick a stable Xcode
+        run: sudo xcode-select -s /Applications/Xcode_16.2.app
+
+      - name: Install Rust with aarch64-apple-ios target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios
+
+      - name: Show toolchain versions
+        run: |
+          rustc --version
+          cargo --version
+          clang++ --version
+          xcrun --sdk iphoneos --show-sdk-path
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ios-v8-cargo-${{ hashFiles('Cargo.lock') }}
+
+      - name: Build wasmer crate for iOS with v8
+        run: |
+          cargo build \
+            --target aarch64-apple-ios \
+            --package wasmer \
+            --no-default-features \
+            --features v8 \
+            --release
+
+      - name: Confirm resulting rlib is arm64 iOS
+        run: |
+          RLIB=$(find target/aarch64-apple-ios/release/deps -maxdepth 1 -name 'libwasmer-*.rlib' | head -1)
+          echo "checking $RLIB"
+          test -n "$RLIB"
+          # An rlib is an ar archive; extract one object and inspect it.
+          TMP=$(mktemp -d)
+          ( cd "$TMP" && ar x "$GITHUB_WORKSPACE/$RLIB" )
+          OBJ=$(find "$TMP" -name '*.o' | head -1)
+          file "$OBJ"
+          file "$OBJ" | grep -q 'arm64'
