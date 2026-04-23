@@ -7,27 +7,31 @@ fn build_v8() {
         sync::{LazyLock, Mutex},
     };
 
-    let url = match (
-        env::var("CARGO_CFG_TARGET_OS").unwrap().as_str(),
-        env::var("CARGO_CFG_TARGET_ARCH").unwrap().as_str(),
-        env::var("CARGO_CFG_TARGET_ENV")
-            .unwrap_or_default()
-            .as_str(),
-    ) {
-        ("macos", "aarch64", _) => {
-            "https://github.com/wasmerio/wee8-custom-builds/releases/download/11.8/wee8-darwin-aarch64.tar.xz"
+    let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();
+    let target_arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap();
+    let target_env = env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
+
+    // V8 13.6 release built from synchwire/v8-custom-builds. The tar
+    // layout ships include/ (V8 public headers) plus obj/libwee8.a
+    // (wee8 static archive at the same path the objcopy step further
+    // down expects). The same tag provides binaries for every
+    // supported target so the URL map just selects the right asset
+    // name.
+    const V8_RELEASE: &str =
+        "https://github.com/synchwire/v8-custom-builds/releases/download/13.6.233.17-1";
+
+    let url = match (target_os.as_str(), target_arch.as_str(), target_env.as_str()) {
+        ("macos", "aarch64", _) => format!("{V8_RELEASE}/v8-darwin-aarch64.tar.xz"),
+        ("linux", "x86_64", "gnu") => format!("{V8_RELEASE}/v8-linux-amd64.tar.xz"),
+        ("linux", "x86_64", "musl") => format!("{V8_RELEASE}/v8-linux-musl.tar.xz"),
+        ("android", "aarch64", _) => format!("{V8_RELEASE}/v8-android.tar.xz"),
+        ("windows", "x86_64", _) => format!("{V8_RELEASE}/v8-windows-amd64.tar.xz"),
+        ("ios", "aarch64", _) => {
+            // iOS has no JIT entitlement outside BrowserEngineKit, so
+            // embedders must initialize V8 with --jitless at runtime
+            // (see Engine::set_flags_from_string).
+            format!("{V8_RELEASE}/v8-ios.tar.xz")
         }
-        ("linux", "x86_64", "gnu") => {
-            "https://github.com/wasmerio/wee8-custom-builds/releases/download/11.8/wee8-linux-amd64.tar.xz"
-        }
-        ("linux", "x86_64", "musl") => {
-            "https://github.com/wasmerio/wee8-custom-builds/releases/download/11.8/wee8-linux-musl-amd64.tar.xz"
-        }
-        ("android", "aarch64", _) => {
-            "https://github.com/wasmerio/wee8-custom-builds/releases/download/11.8/wee8-android-arm64.tar.xz"
-        }
-        // Not supported in 6.0.0-alpha1
-        //("windows", "x86_64", _) => "https://github.com/wasmerio/wee8-custom-builds/releases/download/11.7-custom1/wee8-windows-amd64.tar.xz",
         (os, arch, _) => panic!("target os + arch combination not supported: {os}, {arch}"),
     };
 
@@ -57,9 +61,9 @@ fn build_v8() {
     archive.unpack(out_dir.clone()).unwrap();
     println!("cargo:rustc-link-search=native={out_dir}");
 
-    if cfg!(any(target_os = "linux",)) {
+    if target_os == "linux" {
         println!("cargo:rustc-link-lib=stdc++");
-    } else if cfg!(target_os = "windows") {
+    } else if target_os == "windows" {
         println!("cargo:rustc-link-lib=winmm");
         println!("cargo:rustc-link-lib=dbghelp");
         println!("cargo:rustc-link-lib=shlwapi");
@@ -94,14 +98,34 @@ fn build_v8() {
     }
 
     let header_path = v8_header_path.join("wasm.h");
-    let mut args = vec![];
-    if cfg!(target_os = "macos") {
-        args.push("-I/usr/local/include");
-        args.push("-I/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1");
-        args.push("-I/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include");
-        args.push("-I/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/include");
-        args.push("-I/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/System/Library/Frameworks");
+
+    // Include paths for clang, scoped to the target we're actually
+    // building for rather than the build host. Previously this matched
+    // only cfg!(target_os = "macos") which silently meant "any
+    // compilation run from a Mac" — including cross-compiles.
+    let mut args: Vec<String> = vec![];
+    if target_os == "macos" {
+        args.push("-I/usr/local/include".to_string());
+        args.push("-I/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1".to_string());
+        args.push("-I/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include".to_string());
+        args.push("-I/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/include".to_string());
+        args.push("-I/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/System/Library/Frameworks".to_string());
+    } else if target_os == "ios" {
+        // Resolve the iOS SDK dynamically so this keeps working as Xcode
+        // versions move around. Cross-compiling from a macOS host.
+        let sdk_path = std::process::Command::new("xcrun")
+            .args(["--sdk", "iphoneos", "--show-sdk-path"])
+            .output()
+            .expect("failed to run xcrun for iOS SDK path (Xcode is required)");
+        let sdk_path = String::from_utf8(sdk_path.stdout)
+            .expect("xcrun produced non-UTF8 output")
+            .trim()
+            .to_string();
+        args.push("-target".to_string());
+        args.push("arm64-apple-ios16.0".to_string());
+        args.push(format!("-isysroot{sdk_path}"));
     }
+
     let bindings = bindgen::Builder::default()
         .header(header_path.display().to_string())
         .clang_args(args)
@@ -111,7 +135,7 @@ fn build_v8() {
         .generate()
         .expect("Unable to generate bindings for `v8`!");
 
-    let out_path = PathBuf::from(out_dir);
+    let out_path = PathBuf::from(&out_dir);
 
     bindings
         .write_to_file(out_path.join("v8_bindings.rs"))
@@ -143,7 +167,7 @@ fn build_v8() {
                 // A bit hacky: we need a way to figure out if we're going to target a Mach-O
                 // library or an ELF one to take care of the "_" in front of symbols.
             {
-                if cfg!(any(target_os = "macos", target_os = "ios")) {
+                if target_os == "macos" || target_os == "ios" {
                     format!("--redefine-sym=_{old}={new}")
                 } else {
                     format!("--redefine-sym={old}={new}")
