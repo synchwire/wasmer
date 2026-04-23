@@ -1,10 +1,17 @@
 name: iOS V8 cross-compile
 
-# Minimal verification that wasmer's v8 backend cross-compiles to
+# Informational check that wasmer's v8 backend cross-compiles to
 # aarch64-apple-ios. The upstream build.yml matrix has enable_v8:
 # false on every entry (V8 marked broken per wasmerio/wasmer#6124),
 # so none of the existing jobs exercise the v8 code path. This job
 # plugs that gap for the iOS target specifically.
+#
+# `continue-on-error: true` on the job keeps this workflow
+# informational rather than blocking: mobile targets sit on top of
+# third-party prebuilt V8 archives and NDK/Xcode toolchains, which
+# drift faster than wasmer itself. Surfacing failures visibly
+# without gating merges matches what the wasmer team asked for
+# when this support was contributed back.
 
 on:
   push:
@@ -19,6 +26,7 @@ jobs:
   ios-v8:
     name: cargo build --target aarch64-apple-ios --features v8
     runs-on: macos-15
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v6
         with:
