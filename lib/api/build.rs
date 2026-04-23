@@ -216,7 +216,11 @@ fn build_v8() {
         .cpp(true)
         .file(&shim_src)
         .include(&v8_include)
-        .std("c++20")
+        // Use the pre-standardization `c++2a` name rather than `c++20`:
+        // older GCC (e.g. the `aarch64-linux-android-g++` inside the
+        // cross-rs container) accepts the former but rejects the
+        // latter. Modern clang/gcc treat the two as aliases.
+        .std("c++2a")
         .flag_if_supported("-fno-exceptions")
         .flag_if_supported("-fno-rtti")
         .compile("wasmer_v8_flags_shim");
