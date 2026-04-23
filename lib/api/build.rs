@@ -12,11 +12,11 @@ fn build_v8() {
     let target_env = env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
 
     // V8 13.6 release built from synchwire/v8-custom-builds. The tar
-    // layout ships include/ (V8 public headers) plus obj/libwee8.a
-    // (wee8 static archive at the same path the objcopy step further
-    // down expects). The same tag provides binaries for every
-    // supported target so the URL map just selects the right asset
-    // name.
+    // layout ships include/ (V8 public headers, used by the
+    // v8_flags_shim.cc compile step below) plus obj/libwee8.a (wee8
+    // static archive at the same path the objcopy step further down
+    // expects). The same tag provides binaries for every supported
+    // target so the URL map just selects the right asset name.
     const V8_RELEASE: &str =
         "https://github.com/synchwire/v8-custom-builds/releases/download/13.6.233.17-1";
 
@@ -192,6 +192,26 @@ fn build_v8() {
     }
 
     println!("cargo:rustc-link-lib=static=wee8prefixed");
+
+    // Build a small C++ shim so the embedder can push flags (e.g.
+    // --jitless) into V8 before the engine is created. V8 freezes
+    // most flag values at initialization, which happens on the first
+    // wasm_engine_new call, so this entry point has to exist
+    // alongside the wee8 C API rather than be reached through it.
+    let v8_include = PathBuf::from(&out_dir).join("include");
+    let shim_src = v8_header_path.join("v8_flags_shim.cc");
+    println!("cargo:rerun-if-changed={}", shim_src.display());
+    let mut shim = cc::Build::new();
+    shim.cpp(true)
+        .file(&shim_src)
+        .include(&v8_include)
+        .std("c++17")
+        .flag_if_supported("-fno-exceptions")
+        .flag_if_supported("-fno-rtti");
+    if target_os == "ios" {
+        shim.flag("-target").flag("arm64-apple-ios16.0");
+    }
+    shim.compile("wasmer_v8_flags_shim");
 }
 
 #[allow(unused)]

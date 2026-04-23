@@ -3,8 +3,15 @@ use crate::{
     BackendEngine,
     backend::v8::bindings::{wasm_engine_delete, wasm_engine_new, wasm_engine_t},
 };
-use std::sync::Arc;
+use std::{ffi::c_char, sync::Arc};
 use wasmer_types::{Features, target::Target};
+
+// Defined by the C++ shim in third-party/wee8/v8_flags_shim.cc, compiled
+// into libwasmer_v8_flags_shim.a by build.rs. Calls through to
+// v8::V8::SetFlagsFromString.
+unsafe extern "C" {
+    fn wasmer_v8_set_flags_from_string(flags: *const c_char, len: usize);
+}
 
 // A handle to an engine, which we want to unsafely mark as Sync.
 struct EngineCapsule(*mut wasm_engine_t);
@@ -48,6 +55,28 @@ impl Engine {
     /// Create a new instance of the `V8` engine.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Push a V8 flag string (e.g. `"--jitless"`) through to the underlying
+    /// V8 runtime. Accepts the same syntax V8 itself accepts on the command
+    /// line; multiple flags may be passed in one call separated by spaces.
+    ///
+    /// This must be called before the first [`Engine`] is constructed in
+    /// this process. V8 initializes the first time `wasm_engine_new` runs
+    /// (which happens the first time an engine is built), and most flag
+    /// values are frozen at that point.
+    ///
+    /// The canonical use case is iOS, where Apple does not grant the JIT
+    /// entitlement to non-browser apps. Setting `"--jitless"` here before
+    /// any engine is built keeps V8 from ever requesting RWX pages.
+    pub fn set_flags_from_string(flags: &str) {
+        // SAFETY: the shim forwards directly to v8::V8::SetFlagsFromString,
+        // which takes (const char*, size_t) without a NUL-termination
+        // requirement. The pointer stays valid for the duration of the
+        // call; V8 copies any values it needs internally.
+        unsafe {
+            wasmer_v8_set_flags_from_string(flags.as_ptr() as *const c_char, flags.len());
+        }
     }
 
     pub(crate) fn deterministic_id(&self) -> String {
