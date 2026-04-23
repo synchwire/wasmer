@@ -27,13 +27,22 @@ jobs:
       - name: Pick a stable Xcode
         run: sudo xcode-select -s /Applications/Xcode_16.2.app
 
-      - name: Install Rust with aarch64-apple-ios target
-        uses: dtolnay/rust-toolchain@stable
+      # The repo pins a toolchain via rust-toolchain.toml (channel = "1.91").
+      # Using dtolnay/rust-toolchain@stable would install stable but cargo
+      # would still invoke the pinned 1.91, which wouldn't have the iOS
+      # target installed. Install the pinned version explicitly and add the
+      # iOS target to *that* toolchain.
+      - uses: ./.github/actions/load_toolchain
+        id: load_toolchain
+
+      - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: ${{ steps.load_toolchain.outputs.rust_toolchain }}
           targets: aarch64-apple-ios
 
       - name: Show toolchain versions
         run: |
+          rustup show active-toolchain
           rustc --version
           cargo --version
           clang++ --version
