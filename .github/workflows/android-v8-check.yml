@@ -1,5 +1,4 @@
 name: Android V8 cross-compile
-
 # Informational check that wasmer's v8 backend cross-compiles to
 # aarch64-linux-android. Same caveats as ios-v8-check.yml: the v8
 # feature isn't exercised by the main build.yml matrix, and this
@@ -13,7 +12,6 @@ name: Android V8 cross-compile
 # only ship aarch64 android archives, and wasmer's build.rs URL
 # map only knows about aarch64-android. armv7 and x86_64 android
 # are out of scope.
-
 on:
   push:
     branches:
@@ -22,7 +20,6 @@ on:
     branches:
       - main
   workflow_dispatch:
-
 jobs:
   android-v8:
     name: cargo build --target aarch64-linux-android --features v8
@@ -32,7 +29,6 @@ jobs:
       - uses: actions/checkout@v6
         with:
           submodules: true
-
       # The repo pins a toolchain via rust-toolchain.toml (channel = "1.91").
       # Using dtolnay/rust-toolchain@stable would install stable but cargo
       # would still invoke the pinned 1.91, which wouldn't have the Android
@@ -40,12 +36,10 @@ jobs:
       # Android target to *that* toolchain.
       - uses: ./.github/actions/load_toolchain
         id: load_toolchain
-
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ steps.load_toolchain.outputs.rust_toolchain }}
           targets: aarch64-linux-android
-
       # Point cc-rs, the linker, and PATH at the Android NDK's clang
       # rather than the default cross-gcc the system ships. wasmer's v8
       # build.rs compiles a small C++ shim that uses C++20 features
@@ -68,7 +62,6 @@ jobs:
             echo "AR_aarch64_linux_android=$NDK_BIN/llvm-ar"
             echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$NDK_BIN/aarch64-linux-android24-clang"
           } >> "$GITHUB_ENV"
-
       - name: Show toolchain versions
         run: |
           rustup show active-toolchain
@@ -77,7 +70,6 @@ jobs:
           "$CXX_aarch64_linux_android" --version
           "$AR_aarch64_linux_android" --version
           llvm-objcopy --version
-
       - name: Cache cargo registry
         uses: actions/cache@v4
         with:
@@ -85,7 +77,6 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
           key: android-v8-cargo-${{ hashFiles('Cargo.lock') }}
-
       - name: Build wasmer crate for Android with v8
         run: |
           cargo build \
@@ -94,7 +85,6 @@ jobs:
             --no-default-features \
             --features v8 \
             --release
-
       - name: Confirm resulting rlib is aarch64 Android
         run: |
           RLIB=$(find target/aarch64-linux-android/release/deps -maxdepth 1 -name 'libwasmer-*.rlib' | head -1)
