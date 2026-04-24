@@ -6889,6 +6889,7 @@ dependencies = [
  "anyhow",
  "bindgen",
  "bytes",
+ "cc",
  "cfg-if",
  "cmake",
  "corosensei",
