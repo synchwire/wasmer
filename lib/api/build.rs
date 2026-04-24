@@ -20,7 +20,11 @@ fn build_v8() {
     const V8_RELEASE: &str =
         "https://github.com/synchwire/v8-custom-builds/releases/download/13.6.233.17-1";
 
-    let url = match (target_os.as_str(), target_arch.as_str(), target_env.as_str()) {
+    let url = match (
+        target_os.as_str(),
+        target_arch.as_str(),
+        target_env.as_str(),
+    ) {
         ("macos", "aarch64", _) => format!("{V8_RELEASE}/v8-darwin-aarch64.tar.xz"),
         ("linux", "x86_64", "gnu") => format!("{V8_RELEASE}/v8-linux-amd64.tar.xz"),
         ("linux", "x86_64", "musl") => format!("{V8_RELEASE}/v8-linux-musl.tar.xz"),
